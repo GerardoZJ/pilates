@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "pilates-supabase",
+    "slug": "pilates-supabase",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "pilatessupabase",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.grtech.pilatessupabase"
+    },
+    "android": {
+      "package": "com.grtech.pilatessupabase",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.grtech.pilatessupabase",
+          "enableGooglePay": true
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6325ab7a-63ed-4327-9a1f-0444903f7905"
+      }
+    }
+  }
+}
