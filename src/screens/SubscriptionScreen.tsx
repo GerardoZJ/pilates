@@ -1,9 +1,18 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import * as Linking from "expo-linking";
 import { supabase } from "../services/supabase";
 import { useStripe } from "@stripe/stripe-react-native";
 import { createPaymentIntent } from "../services/stripe";
+import { hardResetAuth } from "../services/authReset";
 
 const colors = {
   primary: "#8B9D83",
@@ -35,14 +44,23 @@ const PLAN_DATA: PlanDetails[] = [
     price: "$299",
     amount: 29900,
     sessions: "2 sesiones",
-    benefits: ["Acceso a clases grupales", "Reserva con 24h de anticipación", "Flexibilidad semanal"],
+    benefits: [
+      "Acceso a clases grupales",
+      "Reserva con 24h de anticipación",
+      "Flexibilidad semanal",
+    ],
   },
   {
     name: "Mensual",
     price: "$999",
     amount: 99900,
     sessions: "8 sesiones",
-    benefits: ["Acceso a clases grupales", "Reserva prioritaria", "1 clase de evaluación gratis", "Cancelación flexible"],
+    benefits: [
+      "Acceso a clases grupales",
+      "Reserva prioritaria",
+      "1 clase de evaluación gratis",
+      "Cancelación flexible",
+    ],
     recommended: true,
   },
   {
@@ -63,17 +81,47 @@ const PLAN_DATA: PlanDetails[] = [
 export default function SubscriptionScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [fixingSession, setFixingSession] = useState(false);
 
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
+
+  const fixSession = async () => {
+    try {
+      setFixingSession(true);
+      await hardResetAuth();
+      Alert.alert(
+        "Sesión limpiada ✅",
+        "Ahora vuelve a INICIAR SESIÓN de nuevo y luego intenta pagar."
+      );
+      // Opcional: te manda a la pantalla de Auth si existe
+      // navigation.navigate("Auth");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo limpiar la sesión.");
+    } finally {
+      setFixingSession(false);
+    }
+  };
 
   const subscribe = async (plan: Plan) => {
     setLoading(true);
     setSelectedPlan(plan);
 
     try {
-      const { data: userData, error: userErr } = await supabase.auth.getUser();
-      if (userErr) throw userErr;
-      if (!userData.user) throw new Error("No hay usuario.");
+      // ✅ Validar sesión REAL (más confiable que getUser para este caso)
+      const { data: sessionData, error: sessionErr } =
+        await supabase.auth.getSession();
+      if (sessionErr) throw sessionErr;
+
+      const userId = sessionData.session?.user?.id;
+      const accessToken = sessionData.session?.access_token;
+
+      if (!userId || !accessToken) {
+        throw new Error("No hay sesión activa. Inicia sesión otra vez.");
+      }
+
+      // DEBUG rápido
+      console.log("USER_ID:", userId);
+      console.log("JWT starts:", accessToken.slice(0, 10), "len:", accessToken.length);
 
       const planData = PLAN_DATA.find((p) => p.name === plan);
       if (!planData) throw new Error("Plan inválido.");
@@ -86,7 +134,7 @@ export default function SubscriptionScreen({ navigation }: any) {
       });
 
       // 2) Init PaymentSheet
-      const returnURL = Linking.createURL("stripe-redirect"); // usa tu scheme
+      const returnURL = Linking.createURL("stripe-redirect"); // tu scheme
 
       const { error: initError } = await initPaymentSheet({
         merchantDisplayName: "Pilates Studio SLRC",
@@ -101,9 +149,9 @@ export default function SubscriptionScreen({ navigation }: any) {
       const { error: payError } = await presentPaymentSheet();
       if (payError) throw new Error(payError.message);
 
-      // 4) Activar suscripción en tu tabla (porque pago OK)
+      // 4) Activar suscripción en tabla (porque pago OK)
       const ins = await supabase.from("subscriptions").insert({
-        user_id: userData.user.id,
+        user_id: userId,
         plan,
         status: "active",
       });
@@ -128,11 +176,28 @@ export default function SubscriptionScreen({ navigation }: any) {
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Planes de Suscripción</Text>
           <Text style={styles.subtitle}>Elige el plan que mejor se adapte a tu ritmo</Text>
         </View>
+
+        {/* 🔧 Botón para limpiar JWT */}
+        <TouchableOpacity
+          style={[styles.fixButton, fixingSession && styles.loadingButton]}
+          onPress={fixSession}
+          disabled={fixingSession || loading}
+          activeOpacity={0.8}
+        >
+          {fixingSession ? (
+            <ActivityIndicator color={colors.card} />
+          ) : (
+            <Text style={styles.fixButtonText}>🔧 Arreglar sesión (Reset JWT)</Text>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.noticeCard}>
           <Text style={styles.noticeText}>
@@ -145,7 +210,10 @@ export default function SubscriptionScreen({ navigation }: any) {
             const isLoading = loading && selectedPlan === planData.name;
 
             return (
-              <View key={planData.name} style={[styles.planCard, planData.recommended && styles.recommendedCard]}>
+              <View
+                key={planData.name}
+                style={[styles.planCard, planData.recommended && styles.recommendedCard]}
+              >
                 {planData.recommended && (
                   <View style={styles.recommendedBadge}>
                     <Text style={styles.recommendedText}>⭐ Más Popular</Text>
@@ -185,10 +253,14 @@ export default function SubscriptionScreen({ navigation }: any) {
                     isLoading && styles.loadingButton,
                   ]}
                   onPress={() => subscribe(planData.name)}
-                  disabled={loading}
+                  disabled={loading || fixingSession}
                   activeOpacity={0.8}
                 >
-                  {isLoading ? <ActivityIndicator color={colors.card} /> : <Text style={styles.subscribeButtonText}>Pagar y Activar</Text>}
+                  {isLoading ? (
+                    <ActivityIndicator color={colors.card} />
+                  ) : (
+                    <Text style={styles.subscribeButtonText}>Pagar y Activar</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             );
@@ -211,14 +283,40 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 4 },
   subtitle: { fontSize: 15, color: colors.textSecondary, lineHeight: 22 },
 
+  fixButton: {
+    backgroundColor: "#3D4B3E",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  fixButtonText: { color: colors.card, fontSize: 14, fontWeight: "700" },
+
   noticeCard: { backgroundColor: colors.primary, borderRadius: 12, padding: 16, marginBottom: 24 },
   noticeText: { fontSize: 14, color: colors.card, lineHeight: 20 },
   noticeBold: { fontWeight: "700" },
 
   plansContainer: { gap: 16, marginBottom: 24 },
-  planCard: { backgroundColor: colors.card, borderRadius: 16, padding: 24, shadowColor: colors.textPrimary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  planCard: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: colors.textPrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
   recommendedCard: { borderWidth: 2, borderColor: colors.success },
-  recommendedBadge: { position: "absolute", top: -12, right: 20, backgroundColor: colors.success, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20 },
+  recommendedBadge: {
+    position: "absolute",
+    top: -12,
+    right: 20,
+    backgroundColor: colors.success,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
   recommendedText: { color: colors.card, fontSize: 13, fontWeight: "700" },
 
   planHeader: { marginBottom: 12 },
@@ -227,18 +325,37 @@ const styles = StyleSheet.create({
   price: { fontSize: 36, fontWeight: "700", color: colors.primaryDark },
   pricePeriod: { fontSize: 16, color: colors.textSecondary, marginLeft: 4 },
 
-  sessionsContainer: { backgroundColor: colors.background, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignSelf: "flex-start", marginBottom: 16 },
+  sessionsContainer: {
+    backgroundColor: colors.background,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginBottom: 16,
+  },
   sessionsText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
 
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
 
   benefitsContainer: { marginBottom: 20 },
-  benefitsTitle: { fontSize: 14, fontWeight: "700", color: colors.textPrimary, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 },
+  benefitsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.textPrimary,
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   benefitRow: { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
   checkmark: { fontSize: 16, color: colors.success, marginRight: 10, marginTop: 2 },
   benefitText: { fontSize: 15, color: colors.textSecondary, flex: 1, lineHeight: 22 },
 
-  subscribeButton: { backgroundColor: colors.primaryDark, paddingVertical: 16, borderRadius: 12, alignItems: "center" },
+  subscribeButton: {
+    backgroundColor: colors.primaryDark,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+  },
   recommendedButton: { backgroundColor: colors.success },
   loadingButton: { opacity: 0.7 },
   subscribeButtonText: { color: colors.card, fontSize: 16, fontWeight: "700" },

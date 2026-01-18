@@ -3,6 +3,15 @@
     "name": "pilates-supabase",
     "slug": "pilates-supabase",
     "version": "1.0.0",
+    "plugins": [
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.grtech.pilatessupabase",
+          "enableGooglePay": true
+        }
+      ]
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,7 +19,10 @@
     "scheme": "pilatessupabase",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.grtech.pilatessupabase"
+      "bundleIdentifier": "com.grtech.pilatessupabase",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.grtech.pilatessupabase",
@@ -24,15 +36,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.com.grtech.pilatessupabase",
-          "enableGooglePay": true
-        }
-      ]
-    ],
     "extra": {
       "eas": {
         "projectId": "6325ab7a-63ed-4327-9a1f-0444903f7905"
